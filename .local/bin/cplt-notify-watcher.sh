@@ -1,16 +1,24 @@
 #!/bin/bash
 set -eu
 
-dir="$HOME/.cache/cplt/notify"
-[ -d "$dir" ] && [ ! -L "$dir" ] || { echo "bad spool dir: $dir" >&2; exit 1; }
+command -v inotifywait >/dev/null || { echo "missing inotifywait" >&2; exit 1; }
+command -v paplay >/dev/null || { echo "missing paplay" >&2; exit 1; }
 
-inotifywait -m -e close_write --format '%f' "$dir" |
+dir="$HOME/.cache/cplt/notify"
+[ ! -L "$dir" ] || { echo "bad spool dir: $dir" >&2; exit 1; }
+mkdir -p "$dir"
+
+inotifywait -m -e close_write -e moved_to --format '%f' "$dir" |
 while IFS= read -r name; do
   case "$name" in
-    done)       paplay "$HOME/.local/share/cplt-notify/notification-success-soft.wav" ;;
-    permission) paplay "$HOME/.local/share/cplt-notify/notification-attention-clear.wav" ;;
-    question)   paplay "$HOME/.local/share/cplt-notify/notification-message-in-clear.wav" ;;
-    error)      paplay "$HOME/.local/share/cplt-notify/notification-error-soft.wav" ;;
+    done)       wav="notification-success-soft.wav" ;;
+    permission) wav="notification-attention-clear.wav" ;;
+    question)   wav="notification-message-in-clear.wav" ;;
+    error)      wav="notification-error-soft.wav" ;;
+    *) continue ;;
   esac
+  # 既知の通知だけ再生し、古い通知音が溜まらないよう止めてから再生する
+  pkill -f "share/cplt-notify" 2>/dev/null || true
+  paplay "$HOME/.local/share/cplt-notify/$wav" || true
 done
 
