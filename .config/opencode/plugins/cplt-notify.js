@@ -3,9 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
-const dir = process.platform === "darwin"
-  ? join(homedir(), "Library", "Caches", "cplt", "notify")
-  : join(homedir(), ".cache", "cplt", "notify")
+const dir = join(homedir(), ".cache", "cplt", "notify")
 
 const kindOf = {
   // V2 でサーバーに流れるのは execution 系。session.idle は TUI 側にしか出ない。
@@ -25,10 +23,13 @@ export default Plugin.define({
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
         const kind = kindOf[event.type]
         if (!kind) continue
-        // 通知失敗でセッションを止めない
+        // 通知失敗でセッションを止めない。dir は消されることがあるので毎回作り直す
+        await mkdir(dir, { recursive: true }).catch(() => {})
         await writeFile(join(dir, kind), "").catch((e) => console.error("cplt-notify:", e))
       }
-    })().catch((e) => console.error("cplt-notify:", e))
+    })().catch((e) => {
+      if (e?.name !== "AbortError") console.error("cplt-notify:", e)
+    })
     return () => controller.abort()
   },
 })
