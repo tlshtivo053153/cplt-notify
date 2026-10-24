@@ -1,5 +1,5 @@
 import { Plugin } from "@opencode/plugin"
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
@@ -18,14 +18,16 @@ export default Plugin.define({
   setup(ctx) {
     const controller = new AbortController()
     void (async () => {
-      // writeFile はディレクトリを作らないため、無い環境では無言で全通知が失敗する
-      await mkdir(dir, { recursive: true })
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
         const kind = kindOf[event.type]
         if (!kind) continue
         // 通知失敗でセッションを止めない。dir は消されることがあるので毎回作り直す
         await mkdir(dir, { recursive: true }).catch(() => {})
-        await writeFile(join(dir, kind), "").catch((e) => console.error("cplt-notify:", e))
+        // symlink先の切詰めを避けるためtmpに書いて同dir内でrenameする
+        const tmp = join(dir, `.${kind}.tmp`)
+        await rm(tmp, { force: true }).catch(() => {})
+        await writeFile(tmp, "", { flag: "wx" }).catch((e) => console.error("cplt-notify:", e))
+        await rename(tmp, join(dir, kind)).catch(() => {})
       }
     })().catch((e) => {
       if (e?.name !== "AbortError") console.error("cplt-notify:", e)
