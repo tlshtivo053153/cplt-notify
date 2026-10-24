@@ -44,7 +44,7 @@ chmod +x ~/.local/bin/cplt-notify-watcher.sh
 ```sh
 base=https://raw.githubusercontent.com/wyzowl/sfx-kit/main/sounds/notifications
 for f in notification-success-soft notification-attention-clear notification-message-in-clear notification-error-soft; do
-  curl -L -o "$HOME/.local/share/cplt-notify/$f.wav" "$base/$f.wav"
+  curl -fSL -o "$HOME/.local/share/cplt-notify/$f.wav" "$base/$f.wav"
 done
 ```
 
@@ -79,7 +79,7 @@ systemctl --user enable --now cplt-notify-watcher.service
 `~/.bashrc`（zsh なら `~/.zshrc`）に以下を1行追加する。多重起動しないためのガード付き。
 
 ```sh
-pgrep -f "[c]plt-notify-watcher.sh" >/dev/null || "$HOME/.local/bin/cplt-notify-watcher.sh" >/dev/null 2>&1 &
+pgrep -f "[/]cplt-notify-watcher\.sh$" >/dev/null || "$HOME/.local/bin/cplt-notify-watcher.sh" >/dev/null 2>&1 &
 ```
 
 ## 動作確認
