@@ -79,7 +79,7 @@ systemctl --user enable --now cplt-notify-watcher.service
 `~/.bashrc`（zsh なら `~/.zshrc`）に以下を1行追加する。多重起動しないためのガード付き。
 
 ```sh
-pgrep -f cplt-notify-watcher.sh >/dev/null || "$HOME/.local/bin/cplt-notify-watcher.sh" >/dev/null 2>&1 &
+pgrep -f "[c]plt-notify-watcher.sh" >/dev/null || "$HOME/.local/bin/cplt-notify-watcher.sh" >/dev/null 2>&1 &
 ```
 
 ## 動作確認
@@ -92,7 +92,7 @@ touch ~/.cache/cplt/notify/done
 
 ## トラブルシュート
 
-- `bad spool dir` で watcher が終了する: `~/.cache/cplt/notify` が存在しない、またはシンボリックリンクになっている。実ディレクトリを作成してから起動する。
+- `bad spool dir` で watcher が終了する: `~/.cache/cplt/notify` がシンボリックリンクになっている。実ディレクトリに置き換えてから起動する。
 - 音が出ない: `inotifywait`・`paplay` が導入されているか、音源4ファイル名が表通りかを確認する。
 - 通知が来ない: `~/.config/opencode/plugins/cplt-notify.js` が配置されているか、opencode を再起動したかを確認する。
 
