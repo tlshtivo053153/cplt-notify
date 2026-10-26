@@ -26,6 +26,19 @@ export default Plugin.define({
             failures = 0
             if (!Object.hasOwn(kindOf, event.type)) continue
             const kind = kindOf[event.type]
+            if (kind === "done" || kind === "error") {
+              // subagent(子セッション)の完了では鳴らさない。親なしトップレベルの完了だけ残す
+              // permission/question は即時のまま
+              // shortcut: fork が将来 parentID を持つようになったら fork 完了が無音になる。その時は child-session 判定に切替える
+              try {
+                const sessionID = event.data?.sessionID
+                if (sessionID && ctx.session?.get) {
+                  if ((await ctx.session.get({ sessionID }))?.parentID) continue
+                }
+              } catch {
+                // 照会失敗時は鳴らす側に倒す(main の取りこぼし防止)。bus 失敗回数には数えない
+              }
+            }
             // 通知失敗でセッションを止めない。dir は消されることがあるので毎回作り直す
             await mkdir(dir, { recursive: true }).catch(() => {})
             // symlink先の切詰めを避けるためtmpに書いて同dir内でrenameする。tmp名は並走セッションと被らないようpidで分ける

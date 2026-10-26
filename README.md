@@ -19,6 +19,8 @@ opencode plugin → ~/.cache/cplt/notify/{done,permission,question,error} → wa
 | `form.created` | `question` | `notification-message-in-clear.wav` |
 | `session.execution.failed` | `error` | `notification-error-soft.wav` |
 
+`done`・`error` は親なしトップレベルセッションの完了・失敗のみ(subagent の完了は無音)。`permission`・`question` は即時。
+
 ## 必要なもの
 
 - `inotifywait`（`inotify-tools`）

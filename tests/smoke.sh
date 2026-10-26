@@ -44,6 +44,8 @@ for ev in session.execution.succeeded permission.asked form.created session.exec
   grep -q "$ev" "$PLUGIN" || { echo "FAIL: plugin missing event $ev"; ev_ok=0; fail=1; }
 done
 [ "$ev_ok" = 1 ] && echo "ok: plugin maps 4 events"
+grep -q "parentID" "$PLUGIN" || { echo "FAIL: plugin missing subagent (parentID) filter"; fail=1; }
+grep -q 'kind === "done" || kind === "error"' "$PLUGIN" || { echo "FAIL: plugin missing done/error-only guard"; fail=1; }
 spool_ok=1
 for k in done permission question error; do
   grep -q "$k)" "$WATCHER" || { echo "FAIL: watcher missing spool $k"; spool_ok=0; fail=1; }
