@@ -80,7 +80,8 @@ pl_diff=$(wc -l < "$T/paplay.log")
 sleep 1
 check "$(wc -l < "$T/paplay.log")" "$((pl_diff + 2))" "different kinds within 1s both play"
 
-rm -rf "$T/.cache/cplt/notify"; sleep 2
+rm -rf "$T/.cache/cplt/notify"
+for _ in $(seq 1 50); do [ -d "$T/.cache/cplt/notify" ] && break; sleep 0.1; done
 : > "$T/.cache/cplt/notify/done"; sleep 1
 check "$(grep -c success-soft "$T/paplay.log" 2>/dev/null || true)" 2 "plays again after spool dir deleted"
 
