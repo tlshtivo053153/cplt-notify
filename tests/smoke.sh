@@ -1,8 +1,8 @@
 #!/bin/bash
-# watcher と plugin 対応表の回帰テスト。依存: inotifywait のみ。使い方: bash tests/smoke.sh
+# watcher と plugin 対応表の回帰テスト。依存: inotifywait のみ。使い方: bash tests/smoke.sh (inotifywait無し環境は ALLOW_SKIP=1 でSKIP可)
 set -u
 
-command -v inotifywait >/dev/null || { echo "SKIP: missing inotifywait"; exit 0; }
+command -v inotifywait >/dev/null || { echo "SKIP: missing inotifywait (nothing ran)"; [ "${ALLOW_SKIP:-}" = "1" ] && exit 0 || exit 2; }
 
 T=$(mktemp -d) || exit 1
 W=""
@@ -17,7 +17,7 @@ for f in notification-success-soft notification-attention-clear notification-mes
 done
 cat > "$T/bin/paplay" <<'EOF'
 #!/bin/bash
-echo "$1" >> "$HOME/paplay.log"
+echo "$*" >> "$HOME/paplay.log"
 [ -f "$HOME/paplay-fail" ] && exit 1
 exit 0
 EOF
@@ -67,6 +67,12 @@ check "$(wc -l < "$T/paplay.log")" 3 "tmp file plays nothing"
 echo hi > "$T/.cache/cplt/notify/notes.txt"; sleep 1
 check "$(wc -l < "$T/paplay.log")" 3 "stray file plays nothing"
 
+pl_diff=$(wc -l < "$T/paplay.log")
+: > "$T/.cache/cplt/notify/permission"
+: > "$T/.cache/cplt/notify/question"
+sleep 1
+check "$(wc -l < "$T/paplay.log")" "$((pl_diff + 2))" "different kinds within 1s both play"
+
 rm -rf "$T/.cache/cplt/notify"; sleep 2
 : > "$T/.cache/cplt/notify/done"; sleep 1
 check "$(grep -c success-soft "$T/paplay.log" 2>/dev/null || true)" 2 "plays again after spool dir deleted"
@@ -100,6 +106,8 @@ check "$got" yes "watcher alive before missing-wav test"
 pl_before=$(wc -l < "$T/paplay.log")
 : > "$T/.cache/cplt/notify/permission"; sleep 1
 check "$(wc -l < "$T/paplay.log")" "$pl_before" "missing wav plays nothing"
+
+if grep -qv "^-- " "$T/paplay.log"; then echo "FAIL: paplay called without --"; fail=1; else echo "ok: paplay uses --"; fi
 
 rm -rf "$T/.cache/cplt/notify"
 ln -s /tmp "$T/.cache/cplt/notify"
