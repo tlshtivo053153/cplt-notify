@@ -37,6 +37,11 @@ check() { # check <got> <want> <label>
 [ -d "$T/.cache/cplt/notify" ] && got=yes || got=no
 check "$got" yes "spool dir auto-created"
 
+HOME="$T" bash "$(dirname "$0")/../.local/bin/cplt-notify-watcher.sh" >/dev/null 2>&1
+check "$?" 1 "second instance refused"
+if kill -0 "$W" 2>/dev/null; then got=yes; else got=no; fi
+check "$got" yes "first watcher still alive"
+
 PLUGIN="$(dirname "$0")/../.config/opencode/plugins/cplt-notify.js"
 WATCHER="$(dirname "$0")/../.local/bin/cplt-notify-watcher.sh"
 ev_ok=1

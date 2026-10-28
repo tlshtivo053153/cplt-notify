@@ -3,6 +3,13 @@ set -eu
 
 command -v inotifywait >/dev/null || { echo "missing inotifywait" >&2; exit 1; }
 command -v paplay >/dev/null || { echo "missing paplay" >&2; exit 1; }
+command -v flock >/dev/null || { echo "missing flock" >&2; exit 1; }
+
+# 二重起動防止。rc例の外側flockとは別ファイルなので、既存の導入を壊さず重ねられる
+lock="$HOME/.cache/cplt/watcher.lock"
+mkdir -p "${lock%/*}" 2>/dev/null || true
+exec 9>"$lock" || { echo "cannot open lock: $lock" >&2; exit 1; }
+flock -n 9 || { echo "already running" >&2; exit 1; }
 
 dir="$HOME/.cache/cplt/notify"
 sound_dir="$HOME/.local/share/cplt-notify"
@@ -47,6 +54,9 @@ reap_prev() {
 
 # dirごと消されると古い場所の監視が無音のまま残るので、消えたら監視し直す
 while true; do
+  # 作り直し後は絞り込みをリセットする(直前の1秒以内でも新しいdirの最初は鳴らす)
+  last_play=""
+  last_kind=""
   # 起動時だけでなく毎回確認する。すり替わっていたら追従しない
   [ ! -L "$dir" ] || { echo "bad spool dir: $dir" >&2; exit 1; }
   mkdir -p "$dir" || { sleep 5; continue; }

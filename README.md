@@ -26,6 +26,7 @@ opencode plugin → ~/.cache/cplt/notify/{done,permission,question,error} → wa
 - `opencode` v2
 - `inotifywait`（`inotify-tools`）
 - `paplay`（PulseAudio / PipeWire 環境）
+- `flock`（`util-linux`。二重起動防止用。通常は最初から入っている）
 
 ```sh
 sudo apt install inotify-tools pulseaudio-utils
