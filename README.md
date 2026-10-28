@@ -50,7 +50,14 @@ base=https://raw.githubusercontent.com/wyzowl/sfx-kit/main/sounds/notifications
 for f in notification-success-soft notification-attention-clear notification-message-in-clear notification-error-soft; do
   curl -fSL -o "$HOME/.local/share/cplt-notify/$f.wav" "$base/$f.wav"
 done
+cd ~/.local/share/cplt-notify && sha256sum -c - <<'EOF'
+49fa865e894e26a59dea81144844270d532fa899d7eb94f2ac0687af4a66ebc1  notification-success-soft.wav
+cda9c0855762e8b65bf793023f9ce379f34fb2ad55580da85710a8f94a55e96f  notification-attention-clear.wav
+56f3cea7149ec69f8aef73c7428533bb3b588d35b8916d4f33d9e1cc8b7c1e3c  notification-message-in-clear.wav
+a4fbba71503798c6c3f375b41e69d2f4dcf43866a1a29273eaa54a0280c8f339  notification-error-soft.wav
+EOF
 ```
+合わなければ上流の更新か破損なので入れ直す。
 
 ## 常駐方法
 
@@ -89,15 +96,24 @@ systemctl --user enable --now cplt-notify-watcher.service
 ## 動作確認
 
 ```sh
-touch ~/.cache/cplt/notify/done
+: > ~/.cache/cplt/notify/done
 ```
 
-完了音（`notification-success-soft.wav`）が再生されれば成功。
+完了音（`notification-success-soft.wav`）が再生されれば成功。`touch` ではなく `: >` を使う（`touch` は2回目以降 ATTRIB しか出ず鳴らない）。
+
+## テスト
+
+```sh
+node --test tests/parent-filter.test.mjs
+bash tests/smoke.sh
+```
+
+`smoke.sh` は `inotifywait` が無い環境では `ALLOW_SKIP=1` でスキップできる。
 
 ## トラブルシュート
 
-- `bad spool dir` で watcher が終了する: `~/.cache/cplt/notify` がシンボリックリンクになっている。実ディレクトリに置き換えてから起動する。
-- 音が出ない: `inotifywait`・`paplay` が導入されているか、音源4ファイル名が表通りかを確認する。
+- `bad spool dir` で watcher が終了する: `~/.cache/cplt/notify` かその親がシンボリックリンクになっている。実ディレクトリに置き換えてから起動する。
+- 音が出ない: `inotifywait`・`paplay` が導入されているか、音源4ファイル名が表通りかを確認する。watcher の監視エラーは `~/.cache/cplt/watcher-inotify.err` に残る。
 - 通知が来ない: `~/.config/opencode/plugins/cplt-notify.js` が配置されているか、opencode を再起動したかを確認する。
 
 ## アンインストール
