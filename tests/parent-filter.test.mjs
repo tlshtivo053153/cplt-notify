@@ -165,6 +165,23 @@ test("sync lookup throw neither silences nor kills the loop", async () => {
   done?.()
 })
 
+test("malformed event neither silences nor kills the loop", async () => {
+  await rm(spool, { recursive: true, force: true })
+  const mixed = {
+    event: {
+      async *subscribe() {
+        yield null
+        yield undefined
+        yield { type: "session.execution.succeeded", data: { sessionID: "main" } }
+      },
+    },
+    session: { get: async () => main },
+  }
+  const done = plugin.setup(mixed)
+  assert.ok(await waitFor("done"), "loop must skip a malformed event and notify main")
+  done?.()
+})
+
 test("keeps retrying bus failures with backoff", async () => {
   const origSetTimeout = global.setTimeout
   const delays = []

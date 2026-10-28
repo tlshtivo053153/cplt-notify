@@ -36,7 +36,7 @@ export default Plugin.define({
         try {
           for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
             failures = 0
-            if (!Object.hasOwn(kindOf, event.type)) continue
+            if (!event || !Object.hasOwn(kindOf, event.type)) continue
             const kind = kindOf[event.type]
             if (kind === "done" || kind === "error") {
               // subagent(子セッション)の完了では鳴らさない。親なしトップレベルの完了だけ残す
