@@ -114,6 +114,16 @@ check "$(wc -l < "$T/paplay.log")" "$pl_before" "missing wav plays nothing"
 
 if grep -qv "^-- " "$T/paplay.log"; then echo "FAIL: paplay called without --"; fail=1; else echo "ok: paplay uses --"; fi
 
+mkdir -p "$T/nohome-bin"
+printf '#!/bin/bash\nexit 0\n' > "$T/nohome-bin/getent"
+chmod +x "$T/nohome-bin/getent"
+if env -u HOME PATH="$T/nohome-bin:$PATH" bash "$WATCHER" 2>"$T/nohome.err"; then
+  echo "FAIL: empty passwd HOME still started"; fail=1
+else
+  check "$?" 1 "empty passwd HOME refused"
+fi
+grep -q "HOME is unset" "$T/nohome.err" && echo "ok: unset HOME reported" || { echo "FAIL: unset HOME message"; fail=1; }
+
 rm -rf "$T/.cache/cplt/notify"
 ln -s /tmp "$T/.cache/cplt/notify"
 for _ in $(seq 1 30); do kill -0 "$W" 2>/dev/null || break; sleep 0.2; done

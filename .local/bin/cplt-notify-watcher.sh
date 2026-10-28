@@ -5,7 +5,11 @@ command -v inotifywait >/dev/null || { echo "missing inotifywait" >&2; exit 1; }
 command -v paplay >/dev/null || { echo "missing paplay" >&2; exit 1; }
 command -v flock >/dev/null || { echo "missing flock" >&2; exit 1; }
 
-# 二重起動防止。rc例の外側flockとは別ファイルなので、既存の導入を壊さず重ねられる
+# HOME 未設定ではすぐ死ぬ代わりに passwd から補う。空のまま /.cache を触らない
+export HOME="${HOME:-$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)}"
+[ -n "$HOME" ] || { echo "HOME is unset" >&2; exit 1; }
+
+# 二重起動防止。常駐方法Bは外側flockなしで直接起動する
 lock="$HOME/.cache/cplt/watcher.lock"
 mkdir -p "${lock%/*}" 2>/dev/null || true
 exec 9>"$lock" || { echo "cannot open lock: $lock" >&2; exit 1; }
@@ -80,8 +84,11 @@ while true; do
       *) continue ;;
     esac
     # 同じ音の連打は1秒に1回まで。暴走loopにスピーカーを占領させない(違う音は通す)
-    now=$SECONDS
-    if [ -n "$last_play" ] && (( now - last_play < 1 )) && [ "$name" = "$last_kind" ]; then
+    # $SECONDS は秒単位なので境界をまたぐと10ms間隔でも通る。マイクロ秒で比べる
+    now=${EPOCHREALTIME:-}
+    now=${now/./}
+    now=${now:-$((SECONDS * 1000000))}
+    if [ -n "$last_play" ] && (( now - last_play < 1000000 )) && [ "$name" = "$last_kind" ]; then
       continue
     fi
     last_play=$now
