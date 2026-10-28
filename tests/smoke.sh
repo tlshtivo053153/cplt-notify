@@ -61,7 +61,7 @@ check "$(grep -c message-in-clear "$T/paplay.log" 2>/dev/null || true)" 1 "renam
 : > "$T/.cache/cplt/notify/permission"; sleep 1
 check "$(grep -c attention-clear "$T/paplay.log" 2>/dev/null || true)" 1 "permission plays"
 
-: > "$T/.cache/cplt/notify/.done.$$.tmp"; sleep 1
+: > "$T/.cache/cplt/notify/.done.tmp"; sleep 1
 check "$(wc -l < "$T/paplay.log")" 3 "tmp file plays nothing"
 
 echo hi > "$T/.cache/cplt/notify/notes.txt"; sleep 1

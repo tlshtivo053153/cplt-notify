@@ -165,9 +165,13 @@ test("sync lookup throw neither silences nor kills the loop", async () => {
   done?.()
 })
 
-test("gives up after 10 bus failures", async () => {
+test("keeps retrying bus failures with backoff", async () => {
   const origSetTimeout = global.setTimeout
-  global.setTimeout = (fn, ...a) => origSetTimeout(fn, 5, ...a.slice(1))
+  const delays = []
+  global.setTimeout = (fn, ms, ...a) => {
+    delays.push(ms)
+    return origSetTimeout(fn, 5, ...a)
+  }
   try {
     let calls = 0
     const failing = {
@@ -179,11 +183,15 @@ test("gives up after 10 bus failures", async () => {
       },
     }
     const done = plugin.setup(failing)
-    const end = Date.now() + 5000
-    while (calls < 10 && Date.now() < end) await new Promise((r) => origSetTimeout(r, 50))
-    await new Promise((r) => origSetTimeout(r, 200))
-    done?.()
-    assert.equal(calls, 10, `bus must be retried 10 times then stop (got ${calls})`)
+    try {
+      const end = Date.now() + 5000
+      while (calls < 35 && Date.now() < end) await new Promise((r) => origSetTimeout(r, 50))
+      assert.ok(calls >= 35, `bus must be retried past 10 without giving up (got ${calls})`)
+      for (let i = 1; i < delays.length; i++) assert.ok(delays[i] >= delays[i - 1], "backoff must not shrink")
+      assert.equal(delays.at(-1), 30000, "backoff must cap at 30s")
+    } finally {
+      done?.()
+    }
   } finally {
     global.setTimeout = origSetTimeout
   }

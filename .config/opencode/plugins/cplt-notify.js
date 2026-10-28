@@ -3,7 +3,7 @@ import { lstat, mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
-const dir = join(homedir(), ".cache", "cplt", "notify")
+const spoolDir = () => join(process.env.HOME || homedir(), ".cache", "cplt", "notify")
 
 const kindOf = {
   // V2 でサーバーに流れるのは execution 系。session.idle は TUI 側にしか出ない。
@@ -18,8 +18,20 @@ export default Plugin.define({
   setup(ctx) {
     const controller = new AbortController()
     let failures = 0
+    // 中断されたらすぐ起きる待ち。破棄時に最大30秒引き留めない
+    const sleep = (ms) =>
+      new Promise((r) => {
+        if (controller.signal.aborted) return r()
+        const off = () => {
+          clearTimeout(t)
+          controller.signal.removeEventListener("abort", off)
+          r()
+        }
+        const t = setTimeout(off, ms)
+        controller.signal.addEventListener("abort", off, { once: true })
+      })
     const loop = async () => {
-      // event bus の一時的失敗で購読が死んでも、次回から鳴るよう購読し直す。壊れたままなら諦める
+      // event bus の一時的失敗で購読が死んでも、次回から鳴るよう購読し直す。壊れたままなら待ちを伸ばして続ける
       while (!controller.signal.aborted) {
         try {
           for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
@@ -41,36 +53,39 @@ export default Plugin.define({
             }
             // 通知失敗でセッションを止めない。dir は消されることがあるので毎回作り直す
             // watcher と同じく symlink 先には書かない
+            const dir = spoolDir()
             if ((await lstat(dir).catch(() => null))?.isSymbolicLink()) {
               console.error("cplt-notify: refusing symlink spool dir")
               continue
             }
             await mkdir(dir, { recursive: true }).catch(() => {})
-            // symlink先の切詰めを避けるためtmpに書いて同dir内でrenameする。tmp名は並走セッションと被らないようpidで分ける
-            const tmp = join(dir, `.${kind}.${process.pid}.tmp`)
+            // symlink先の切詰めを避けるためtmpに書いて同dir内でrenameする。固定名にして異常終了時のゴミを次回消せるようにする(同時書込はwatcher側の絞り込みで1回分に潰れる)
+            const tmp = join(dir, `.${kind}.tmp`)
             await rm(tmp, { force: true }).catch(() => {})
-            await writeFile(tmp, "", { flag: "wx" }).catch((e) => console.error("cplt-notify:", e))
+            await writeFile(tmp, "", { flag: "wx" }).catch((e) => {
+              if (e?.code !== "EEXIST") console.error("cplt-notify:", e)
+            })
             await rename(tmp, join(dir, kind)).catch(async () => {
               // dir が処理中に消されると tmp ごと消えるので、作り直して書き直してから一度だけ再試行する
               if ((await lstat(dir).catch(() => null))?.isSymbolicLink()) return
               await mkdir(dir, { recursive: true }).catch(() => {})
               await rm(tmp, { force: true }).catch(() => {})
-              await writeFile(tmp, "", { flag: "wx" }).catch((e) => console.error("cplt-notify:", e))
+              await writeFile(tmp, "", { flag: "wx" }).catch((e) => {
+                if (e?.code !== "EEXIST") console.error("cplt-notify:", e)
+              })
               await rename(tmp, join(dir, kind)).catch(() => rm(tmp, { force: true }).catch(() => {}))
             })
           }
           // bus が正常終了しても購読し直す(空回りを避けるため1秒待つ)
           if (controller.signal.aborted) return
-          await new Promise((r) => setTimeout(r, 1000))
+          failures = 0
+          await sleep(1000)
         } catch (e) {
           if (e?.name === "AbortError") return
           failures += 1
           console.error("cplt-notify:", e)
-          if (failures >= 10) {
-            console.error("cplt-notify: giving up after 10 failures")
-            return
-          }
-          await new Promise((r) => setTimeout(r, 1000))
+          // 諦めず待ちを伸ばして購読し直す(起動直後の連敗で一生無音にしない)
+          await sleep(Math.min(1000 * failures, 30000))
         }
       }
     }
