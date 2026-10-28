@@ -60,6 +60,7 @@ done
 
 : > "$T/.cache/cplt/notify/done"; sleep 1
 check "$(grep -c success-soft "$T/paplay.log" 2>/dev/null || true)" 1 "done plays exactly once"
+[ -e "$T/.cache/cplt/notify/done" ] && { echo "FAIL: played spool not cleaned"; fail=1; } || echo "ok: played spool cleaned"
 
 echo x > "$T/.cache/cplt/notify/tmpf" && mv "$T/.cache/cplt/notify/tmpf" "$T/.cache/cplt/notify/question"; sleep 1
 check "$(grep -c message-in-clear "$T/paplay.log" 2>/dev/null || true)" 1 "rename (moved_to) plays"
@@ -82,6 +83,14 @@ check "$(wc -l < "$T/paplay.log")" "$((pl_diff + 2))" "different kinds within 1s
 rm -rf "$T/.cache/cplt/notify"; sleep 2
 : > "$T/.cache/cplt/notify/done"; sleep 1
 check "$(grep -c success-soft "$T/paplay.log" 2>/dev/null || true)" 2 "plays again after spool dir deleted"
+
+rs_before=$(grep -c success-soft "$T/paplay.log" 2>/dev/null || true)
+kill "$W" 2>/dev/null; wait "$W" 2>/dev/null || true
+: > "$T/.cache/cplt/notify/done"
+bash "$(dirname "$0")/../.local/bin/cplt-notify-watcher.sh" &
+W=$!
+sleep 1
+check "$(grep -c success-soft "$T/paplay.log" 2>/dev/null || true)" "$rs_before" "stale spool not replayed on boot"
 
 before=$(grep -c success-soft "$T/paplay.log" 2>/dev/null || true)
 for _ in 1 2 3 4 5; do : > "$T/.cache/cplt/notify/done"; done
@@ -122,6 +131,7 @@ check "$got" yes "watcher alive before missing-wav test"
 pl_before=$(wc -l < "$T/paplay.log")
 : > "$T/.cache/cplt/notify/permission"; sleep 1
 check "$(wc -l < "$T/paplay.log")" "$pl_before" "missing wav plays nothing"
+[ -e "$T/.cache/cplt/notify/permission" ] && { echo "FAIL: missing-wav spool not cleaned"; fail=1; } || echo "ok: missing-wav spool cleaned"
 
 if grep -qv "^-- " "$T/paplay.log"; then echo "FAIL: paplay called without --"; fail=1; else echo "ok: paplay uses --"; fi
 
@@ -139,5 +149,17 @@ rm -rf "$T/.cache/cplt/notify"
 ln -s /tmp "$T/.cache/cplt/notify"
 for _ in $(seq 1 30); do kill -0 "$W" 2>/dev/null || break; sleep 0.2; done
 if kill -0 "$W" 2>/dev/null; then echo "FAIL: watcher follows swapped symlink (still alive)"; fail=1; else echo "ok: watcher exits on swapped symlink"; fi
+
+[ -f "$T/.cache/cplt/watcher-inotify.err" ] && echo "ok: inotify errlog exists" || { echo "FAIL: inotify errlog missing"; fail=1; }
+
+rm -f "$T/.cache/cplt/notify"
+mkdir -p "$T/.cache/cplt/notify"
+bash "$(dirname "$0")/../.local/bin/cplt-notify-watcher.sh" &
+W=$!
+sleep 1
+kill -TERM "$W"
+wait "$W"; check "$?" 143 "TERM exits 143"
+for _ in $(seq 1 30); do pgrep -f "inotifywait.*$T.*cplt/notif[y]" >/dev/null 2>&1 || break; sleep 0.2; done
+if pgrep -f "inotifywait.*$T.*cplt/notif[y]" >/dev/null 2>&1; then echo "FAIL: orphan inotifywait left"; fail=1; else echo "ok: no orphan inotifywait"; fi
 
 exit "$fail"

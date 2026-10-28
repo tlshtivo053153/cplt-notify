@@ -30,7 +30,14 @@ async function run(events, sessions) {
     },
   }
   cleanups.push(plugin.setup(ctx))
-  await new Promise((r) => setTimeout(r, 500))
+  // 固定待ちだと遅い環境で取こぼすので、最初の書込が出るまで待ってから少し集める。陰性は何も出ないまま上限まで待つ
+  const end = Date.now() + 500
+  for (;;) {
+    if ((await readdir(spool).catch(() => [])).length) break
+    if (Date.now() > end) break
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  await new Promise((r) => setTimeout(r, 300))
   cleanups.forEach((fn) => fn?.())
   return new Set(await readdir(spool).catch(() => []))
 }

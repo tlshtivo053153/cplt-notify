@@ -24,6 +24,7 @@ sound_done="notification-success-soft.wav"
 sound_permission="notification-attention-clear.wav"
 sound_question="notification-message-in-clear.wav"
 sound_error="notification-error-soft.wav"
+errlog="$HOME/.cache/cplt/watcher-inotify.err"
 
 prev=""
 last_play=""
@@ -59,6 +60,44 @@ reap_prev() {
   prev=""
 }
 
+# 単発の再生。readループと起動直後のscanで共用する
+play_kind() { # $1 = done|permission|question|error
+  case "$1" in
+    done)       wav="$sound_done" ;;
+    permission) wav="$sound_permission" ;;
+    question)   wav="$sound_question" ;;
+    error)      wav="$sound_error" ;;
+    *) return 0 ;;
+  esac
+  # 同じ音の連打は1秒に1回まで(違う音は通す)。時刻が戻ったら絞り込まない
+  now=${EPOCHREALTIME:-}
+  now=${now/./}
+  now=${now:-$((SECONDS * 1000000))}
+  if [ -n "$last_play" ] && (( now >= last_play )) && (( now - last_play < 1000000 )) && [ "$1" = "$last_kind" ]; then
+    return 0
+  fi
+  last_play=$now
+  last_kind=$1
+  if [ ! -f "$sound_dir/$wav" ]; then
+    echo "missing sound: $wav" >&2
+    rm -f -- "$dir/$1" 2>/dev/null || true
+    return 0
+  fi
+  # 直前の音が残っていたら止める。PID使い回し対策は stop_prev 内
+  stop_prev
+  paplay -- "$sound_dir/$wav" & prev=$!
+  rm -f -- "$dir/$1" 2>/dev/null || true
+}
+
+cleanup() {
+  [ -n "${INOTIFY_PID:-}" ] && kill "$INOTIFY_PID" 2>/dev/null || true
+  [ -n "${prev:-}" ] && is_own_paplay "$prev" && kill "$prev" 2>/dev/null || true
+}
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 130' INT
+trap cleanup EXIT
+
+first=1
 # dirごと消されると古い場所の監視が無音のまま残るので、消えたら監視し直す
 while true; do
   # 作り直し後は絞り込みをリセットする(直前の1秒以内でも新しいdirの最初は鳴らす)
@@ -75,41 +114,28 @@ while true; do
   for wav in "$sound_done" "$sound_permission" "$sound_question" "$sound_error"; do
     [ -f "$sound_dir/$wav" ] || echo "missing sound: $wav" >&2
   done
-  coproc INOTIFY { exec inotifywait -m -e close_write -e moved_to -e delete_self -e move_self --format '%e %f' "$dir" 2>/dev/null; } || { sleep 5; continue; }
+  # 失敗理由は外から見られる場所に残す(/dev/nullに捨てない)
+  coproc INOTIFY { exec inotifywait -m -e close_write -e moved_to -e delete_self -e move_self --format '%e %f' "$dir" 2>"$errlog"; } || { sleep 5; continue; }
   infd=${INOTIFY[0]}
+  # 監視開始までの隙間に書かれた分を拾う。dir消失後の作り直しでは中身は全て未再生なので全部鳴らす
+  # (起動直後は古い残骸を鳴らさない)。隙間とeventの二重拾いは同種1秒絞りで潰れる
+  if [ -z "$first" ]; then
+    for k in done permission question error; do
+      [ -f "$dir/$k" ] 2>/dev/null || continue
+      play_kind "$k"
+    done
+  fi
+  first=""
   while read -r evt name <&"$infd"; do
     case "$evt" in
       *DELETE_SELF*|*MOVE_SELF*|*IGNORED*)
         kill "$INOTIFY_PID" 2>/dev/null || true
         break ;;
     esac
-    case "$name" in
-      done)       wav="$sound_done" ;;
-      permission) wav="$sound_permission" ;;
-      question)   wav="$sound_question" ;;
-      error)      wav="$sound_error" ;;
-      *) continue ;;
-    esac
-    # 同じ音の連打は1秒に1回まで。暴走loopにスピーカーを占領させない(違う音は通す)
-    # $SECONDS は秒単位なので境界をまたぐと10ms間隔でも通る。マイクロ秒で比べる
-    now=${EPOCHREALTIME:-}
-    now=${now/./}
-    now=${now:-$((SECONDS * 1000000))}
-    if [ -n "$last_play" ] && (( now - last_play < 1000000 )) && [ "$name" = "$last_kind" ]; then
-      continue
-    fi
-    last_play=$now
-    last_kind=$name
-    # 起動後に消された音源はその場で知らせる
-    if [ ! -f "$sound_dir/$wav" ]; then
-      echo "missing sound: $wav" >&2
-      continue
-    fi
-    # 直前の音が残っていたら止める。PID使い回し対策は stop_prev 内
-    stop_prev
-    paplay -- "$sound_dir/$wav" & prev=$!
+    play_kind "$name"
   done
   wait "$INOTIFY_PID" 2>/dev/null || true
+  INOTIFY_PID=""
   exec {infd}<&-
   reap_prev
   sleep 1
