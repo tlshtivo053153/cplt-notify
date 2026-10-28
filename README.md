@@ -1,6 +1,6 @@
 # cplt-notify
 
-[navikt/cplt](https://github.com/navikt/cplt) 越しに opencode を使うときに、実行完了・失敗・許可確認・質問を音で通知するもの。サンドボックス内の opencode plugin が spool ファイルを書き、ホスト側の watcher が `inotifywait + paplay` で対応する音源を再生する。
+[navikt/cplt](https://github.com/navikt/cplt) 越しに opencode v2 を使うときに、実行完了・失敗・許可確認・質問を音で通知するもの。opencode v1 には対応しない。サンドボックス内の opencode plugin が spool ファイルを書き、ホスト側の watcher が `inotifywait + paplay` で対応する音源を再生する。
 
 Linux のみ対応。
 
@@ -23,6 +23,7 @@ opencode plugin → ~/.cache/cplt/notify/{done,permission,question,error} → wa
 
 ## 必要なもの
 
+- `opencode` v2
 - `inotifywait`（`inotify-tools`）
 - `paplay`（PulseAudio / PipeWire 環境）
 
