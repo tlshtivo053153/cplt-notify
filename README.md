@@ -80,10 +80,10 @@ systemctl --user enable --now cplt-notify-watcher.service
 
 ### B: rc ファイル
 
-`~/.bashrc`（zsh なら `~/.zshrc`）に以下を1行追加する。多重起動しないためのガード付き。
+`~/.bashrc`（zsh なら `~/.zshrc`）に以下を1行追加する。二重起動は watcher 内の flock が拒否する。
 
 ```sh
-flock -n "$HOME/.cache/cplt-notify-watcher.lock" "$HOME/.local/bin/cplt-notify-watcher.sh" >/dev/null 2>&1 &
+"$HOME/.local/bin/cplt-notify-watcher.sh" >/dev/null 2>&1 &
 ```
 
 ## 動作確認
