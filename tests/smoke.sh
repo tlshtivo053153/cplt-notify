@@ -7,7 +7,8 @@ command -v inotifywait >/dev/null || { echo "SKIP: missing inotifywait (nothing 
 T=$(mktemp -d) || exit 1
 W=""
 T2=""
-cleanup() { pkill -P "$W" 2>/dev/null; [ -n "$W" ] && kill "$W" 2>/dev/null; rm -rf "$T"; [ -n "$T2" ] && rm -rf "$T2"; }
+T3=""
+cleanup() { pkill -P "$W" 2>/dev/null; [ -n "$W" ] && kill "$W" 2>/dev/null; rm -rf "$T"; [ -n "$T2" ] && rm -rf "$T2"; [ -n "$T3" ] && rm -rf "$T3"; }
 trap cleanup EXIT
 
 export HOME="$T"
@@ -103,6 +104,16 @@ if HOME="$T2" bash "$(dirname "$0")/../.local/bin/cplt-notify-watcher.sh" >/dev/
   fail=1
 else
   check "$?" 1 "symlink spool dir refused"
+fi
+
+T3=$(mktemp -d) || exit 1
+mkdir -p "$T3/.cache"
+ln -s /tmp "$T3/.cache/cplt"
+if HOME="$T3" bash "$(dirname "$0")/../.local/bin/cplt-notify-watcher.sh" >/dev/null 2>&1; then
+  echo "FAIL: symlinked parent refused (exited 0)"
+  fail=1
+else
+  check "$?" 1 "symlinked parent refused"
 fi
 
 rm "$T/.local/share/cplt-notify/notification-attention-clear.wav"

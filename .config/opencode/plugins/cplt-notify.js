@@ -1,9 +1,22 @@
 import { Plugin } from "@opencode/plugin"
 import { lstat, mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 
-const spoolDir = () => join(process.env.HOME || homedir(), ".cache", "cplt", "notify")
+const homeDir = () => (process.env.HOME || homedir()).replace(/\/+$/, "") || "/"
+const spoolDir = () => join(homeDir(), ".cache", "cplt", "notify")
+
+// 最終部分だけでなく親も辿る。どれか一つでもsymlinkなら書かない(HOME自体は対象外でwatcherと統一)
+const isBadSpool = async (dir) => {
+  const home = homeDir()
+  let d = dir
+  for (;;) {
+    if (d === home || d === dirname(d)) break
+    if ((await lstat(d).catch(() => null))?.isSymbolicLink()) return true
+    d = dirname(d)
+  }
+  return false
+}
 
 const kindOf = {
   // V2 でサーバーに流れるのは execution 系。session.idle は TUI 側にしか出ない。
@@ -54,7 +67,7 @@ export default Plugin.define({
             // 通知失敗でセッションを止めない。dir は消されることがあるので毎回作り直す
             // watcher と同じく symlink 先には書かない
             const dir = spoolDir()
-            if ((await lstat(dir).catch(() => null))?.isSymbolicLink()) {
+            if (await isBadSpool(dir)) {
               console.error("cplt-notify: refusing symlink spool dir")
               continue
             }
@@ -67,7 +80,7 @@ export default Plugin.define({
             })
             await rename(tmp, join(dir, kind)).catch(async () => {
               // dir が処理中に消されると tmp ごと消えるので、作り直して書き直してから一度だけ再試行する
-              if ((await lstat(dir).catch(() => null))?.isSymbolicLink()) return
+              if (await isBadSpool(dir)) return
               await mkdir(dir, { recursive: true }).catch(() => {})
               await rm(tmp, { force: true }).catch(() => {})
               await writeFile(tmp, "", { flag: "wx" }).catch((e) => {

@@ -261,3 +261,20 @@ test("skips spool dir symlink", async () => {
     await rm(spool, { force: true })
   }
 })
+
+test("skips symlinked spool parent", async () => {
+  await rm(spool, { recursive: true, force: true })
+  const cplt = join(tmpRoot, "home", ".cache", "cplt")
+  await mkdir(cplt, { recursive: true })
+  const target = join(tmpRoot, "parent-target")
+  await mkdir(target, { recursive: true })
+  await rm(cplt, { recursive: true, force: true })
+  await symlink(target, cplt)
+  try {
+    const files = await run([{ type: "session.execution.succeeded", data: { sessionID: "main" } }], { main })
+    assert.ok(!files.has("done"), "symlinked parent must not be written")
+    assert.deepStrictEqual(await readdir(target), [], "symlink target must stay empty")
+  } finally {
+    await rm(cplt, { force: true })
+  }
+})

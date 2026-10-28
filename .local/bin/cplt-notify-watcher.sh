@@ -8,6 +8,9 @@ command -v flock >/dev/null || { echo "missing flock" >&2; exit 1; }
 # HOME 未設定ではすぐ死ぬ代わりに passwd から補う。空のまま /.cache を触らない
 export HOME="${HOME:-$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)}"
 [ -n "$HOME" ] || { echo "HOME is unset" >&2; exit 1; }
+# 末尾スラッシュを落とす(比較ずれ防止)。/ だけは残す
+HOME="${HOME%/}"
+[ -n "$HOME" ] || HOME="/"
 
 # 二重起動防止。常駐方法Bは外側flockなしで直接起動する
 lock="$HOME/.cache/cplt/watcher.lock"
@@ -61,8 +64,12 @@ while true; do
   # 作り直し後は絞り込みをリセットする(直前の1秒以内でも新しいdirの最初は鳴らす)
   last_play=""
   last_kind=""
-  # 起動時だけでなく毎回確認する。すり替わっていたら追従しない
-  [ ! -L "$dir" ] || { echo "bad spool dir: $dir" >&2; exit 1; }
+  # 起動時だけでなく毎回確認する。最終部分だけでなく親も辿って確認する
+  d="$dir"
+  while [ -n "$d" ] && [ "$d" != "$HOME" ] && [ "$d" != "/" ]; do
+    [ ! -L "$d" ] || { echo "bad spool dir: $dir" >&2; exit 1; }
+    d=${d%/*}
+  done
   mkdir -p "$dir" || { sleep 5; continue; }
   # 音源が無いと無音で失敗するだけなので先に知らせる
   for wav in "$sound_done" "$sound_permission" "$sound_question" "$sound_error"; do
