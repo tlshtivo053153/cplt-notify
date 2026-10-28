@@ -1,5 +1,5 @@
 import { Plugin } from "@opencode/plugin"
-import { mkdir, rename, rm, writeFile } from "node:fs/promises"
+import { lstat, mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
@@ -40,14 +40,28 @@ export default Plugin.define({
               }
             }
             // 通知失敗でセッションを止めない。dir は消されることがあるので毎回作り直す
+            // watcher と同じく symlink 先には書かない
+            if ((await lstat(dir).catch(() => null))?.isSymbolicLink()) {
+              console.error("cplt-notify: refusing symlink spool dir")
+              continue
+            }
             await mkdir(dir, { recursive: true }).catch(() => {})
             // symlink先の切詰めを避けるためtmpに書いて同dir内でrenameする。tmp名は並走セッションと被らないようpidで分ける
             const tmp = join(dir, `.${kind}.${process.pid}.tmp`)
             await rm(tmp, { force: true }).catch(() => {})
             await writeFile(tmp, "", { flag: "wx" }).catch((e) => console.error("cplt-notify:", e))
-            await rename(tmp, join(dir, kind)).catch(() => rm(tmp, { force: true }).catch(() => {}))
+            await rename(tmp, join(dir, kind)).catch(async () => {
+              // dir が処理中に消されると tmp ごと消えるので、作り直して書き直してから一度だけ再試行する
+              if ((await lstat(dir).catch(() => null))?.isSymbolicLink()) return
+              await mkdir(dir, { recursive: true }).catch(() => {})
+              await rm(tmp, { force: true }).catch(() => {})
+              await writeFile(tmp, "", { flag: "wx" }).catch((e) => console.error("cplt-notify:", e))
+              await rename(tmp, join(dir, kind)).catch(() => rm(tmp, { force: true }).catch(() => {}))
+            })
           }
-          return
+          // bus が正常終了しても購読し直す(空回りを避けるため1秒待つ)
+          if (controller.signal.aborted) return
+          await new Promise((r) => setTimeout(r, 1000))
         } catch (e) {
           if (e?.name === "AbortError") return
           failures += 1

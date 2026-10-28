@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtemp, mkdir, readdir, rm, readFile, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readdir, rm, readFile, symlink, writeFile } from "node:fs/promises"
 import { tmpdir, homedir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -163,4 +163,76 @@ test("sync lookup throw neither silences nor kills the loop", async () => {
   const done = plugin.setup(throwing)
   assert.ok(await waitFor("done"), "loop must survive a sync lookup throw and notify main")
   done?.()
+})
+
+test("gives up after 10 bus failures", async () => {
+  const origSetTimeout = global.setTimeout
+  global.setTimeout = (fn, ...a) => origSetTimeout(fn, 5, ...a.slice(1))
+  try {
+    let calls = 0
+    const failing = {
+      event: {
+        async *subscribe() {
+          calls += 1
+          throw new Error("bus down")
+        },
+      },
+    }
+    const done = plugin.setup(failing)
+    const end = Date.now() + 5000
+    while (calls < 10 && Date.now() < end) await new Promise((r) => origSetTimeout(r, 50))
+    await new Promise((r) => origSetTimeout(r, 200))
+    done?.()
+    assert.equal(calls, 10, `bus must be retried 10 times then stop (got ${calls})`)
+  } finally {
+    global.setTimeout = origSetTimeout
+  }
+})
+
+test("resubscribes after a clean bus end", async () => {
+  await rm(spool, { recursive: true, force: true })
+  const origSetTimeout = global.setTimeout
+  global.setTimeout = (fn, ...a) => origSetTimeout(fn, 5, ...a.slice(1))
+  try {
+    let calls = 0
+    let yielded = false
+    const twoShot = {
+      event: {
+        async *subscribe() {
+          calls += 1
+          if (yielded) return
+          yielded = true
+          yield { type: "session.execution.succeeded", data: { sessionID: "main" } }
+        },
+      },
+      session: { get: async () => main },
+    }
+    const done = plugin.setup(twoShot)
+    try {
+      assert.ok(await waitFor("done"), "must resubscribe after a clean bus end")
+      const end2 = Date.now() + 5000
+      while (calls < 2 && Date.now() < end2) await new Promise((r) => origSetTimeout(r, 20))
+      assert.ok(calls >= 2, `bus must be subscribed again (calls=${calls})`)
+    } finally {
+      done?.()
+    }
+    await new Promise((r) => origSetTimeout(r, 100))
+  } finally {
+    global.setTimeout = origSetTimeout
+  }
+})
+
+test("skips spool dir symlink", async () => {
+  await rm(spool, { recursive: true, force: true })
+  await mkdir(join(tmpRoot, "home", ".cache", "cplt"), { recursive: true })
+  const target = join(tmpRoot, "link-target")
+  await mkdir(target, { recursive: true })
+  await symlink(target, spool)
+  try {
+    const files = await run([{ type: "session.execution.succeeded", data: { sessionID: "main" } }], { main })
+    assert.ok(!files.has("done"), "symlink spool dir must not be written")
+    assert.deepStrictEqual(await readdir(target), [], "symlink target must stay empty")
+  } finally {
+    await rm(spool, { force: true })
+  }
 })
