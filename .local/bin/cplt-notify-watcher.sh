@@ -129,12 +129,12 @@ while true; do
   while read -r evt name <&"$infd"; do
     case "$evt" in
       *DELETE_SELF*|*MOVE_SELF*|*IGNORED*)
-        kill "$INOTIFY_PID" 2>/dev/null || true
+        kill "${INOTIFY_PID:-}" 2>/dev/null || true
         break ;;
     esac
     play_kind "$name"
   done
-  wait "$INOTIFY_PID" 2>/dev/null || true
+  wait "${INOTIFY_PID:-}" 2>/dev/null || true
   INOTIFY_PID=""
   exec {infd}<&-
   reap_prev
