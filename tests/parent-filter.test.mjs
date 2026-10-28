@@ -285,3 +285,29 @@ test("skips symlinked spool parent", async () => {
     await rm(cplt, { force: true })
   }
 })
+
+test("retries after a transient rename failure", async () => {
+  await rm(spool, { recursive: true, force: true })
+  // stub fs: fail the first rename with ENOENT, then use the real one
+  await writeFile(
+    join(tmpRoot, "plugin", "stub-fs.mjs"),
+    'export * from "node:fs/promises";\nimport { rename as realRename } from "node:fs/promises";\nlet once = false;\nexport async function rename(a, b) {\n  if (!once) { once = true; const e = new Error("transient ENOENT"); e.code = "ENOENT"; throw e; }\n  return realRename(a, b);\n}\n',
+  )
+  const src = await readFile(join(tmpRoot, "plugin", "cplt-notify.js"), "utf8")
+  assert.ok(src.includes('from "node:fs/promises"'), "plugin must import node:fs/promises")
+  await writeFile(join(tmpRoot, "plugin", "cplt-notify-retry.js"), src.replace('from "node:fs/promises"', 'from "./stub-fs.mjs"'))
+  const retryPlugin = (await import(pathToFileURL(join(tmpRoot, "plugin", "cplt-notify-retry.js")).href)).default
+  const stop = retryPlugin.setup({
+    event: {
+      async *subscribe() {
+        yield { type: "session.execution.succeeded", data: { sessionID: "main" } }
+      },
+    },
+    session: { get: async () => main },
+  })
+  try {
+    assert.ok(await waitFor("done"), "retry must still write done after transient rename failure")
+  } finally {
+    stop?.()
+  }
+})
